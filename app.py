@@ -96,6 +96,23 @@ def initialize_mysql_auth_schema(connection):
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS applications (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT NULL,
+                    company VARCHAR(120) NOT NULL,
+                    role VARCHAR(120) NOT NULL,
+                    status ENUM(
+                        'Applied',
+                        'Interview',
+                        'Selected',
+                        'Rejected'
+                    ) NOT NULL DEFAULT 'Applied',
+                    skills TEXT,
+                    applied_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX applications_user_id_idx (user_id)
+                )
+            """)
             cursor.execute("SHOW COLUMNS FROM applications LIKE 'user_id'")
             if not cursor.fetchone():
                 try:
@@ -103,11 +120,11 @@ def initialize_mysql_auth_schema(connection):
                 except Error as error:
                     if error.errno != 1060:
                         raise
-                try:
-                    cursor.execute("CREATE INDEX applications_user_id_idx ON applications (user_id)")
-                except Error as error:
-                    if error.errno != 1061:
-                        raise
+            try:
+                cursor.execute("CREATE INDEX applications_user_id_idx ON applications (user_id)")
+            except Error as error:
+                if error.errno != 1061:
+                    raise
             connection.commit()
         finally:
             cursor.close()

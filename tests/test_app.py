@@ -2,11 +2,12 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
 
 os.environ["DB_BACKEND"] = "sqlite"
 os.environ["FLASK_SECRET_KEY"] = "test-secret-key"
 
-from app import app
+from app import app, initialize_mysql_auth_schema
 
 
 class ApplicationTests(unittest.TestCase):
@@ -18,6 +19,33 @@ class ApplicationTests(unittest.TestCase):
 
     def tearDown(self):
         self.database_dir.cleanup()
+
+    def test_mysql_initialization_creates_applications_before_migrating_it(self):
+        cursor = Mock()
+        cursor.fetchone.return_value = None
+        connection = Mock()
+        connection.cursor.return_value = cursor
+
+        import app as app_module
+
+        initialized = app_module._mysql_auth_schema_initialized
+        app_module._mysql_auth_schema_initialized = False
+        try:
+            initialize_mysql_auth_schema(connection)
+        finally:
+            app_module._mysql_auth_schema_initialized = initialized
+
+        statements = [call.args[0] for call in cursor.execute.call_args_list]
+        create_applications = next(
+            index
+            for index, statement in enumerate(statements)
+            if "CREATE TABLE IF NOT EXISTS applications" in statement
+        )
+        migrate_applications = statements.index(
+            "SHOW COLUMNS FROM applications LIKE 'user_id'"
+        )
+        self.assertLess(create_applications, migrate_applications)
+        connection.commit.assert_called_once()
 
     def test_landing_page_has_inline_account_access(self):
         response = self.client.get("/")
