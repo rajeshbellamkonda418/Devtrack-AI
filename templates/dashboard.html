@@ -19,13 +19,10 @@
         <a href="#interview-prep" data-dashboard-target="interview-prep">Interview Prep</a>
         <a href="#dsa-practice" data-dashboard-target="dsa-practice">DSA Practice</a>
         <a href="#applications" data-dashboard-target="applications">My Applications</a>
-        <form class="sidebar-logout" action="/logout" method="post">
-            <button type="submit">Sign out</button>
-        </form>
     </aside>
 
     <main class="main">
-        <h1>Welcome back, {{ session.get("user_name", "there") }}!</h1>
+        <h1>Welcome, {{ session.get("user_name", "Guest") }}!</h1>
         <p class="subtitle">Your applications, resume intelligence, and multi-platform career matching.</p>
 
         <section id="overview" class="stats" data-dashboard-section aria-label="Application statistics">
@@ -48,8 +45,64 @@
         </section>
 
         <section id="status-overview" data-dashboard-section hidden>
-            <h2>Application Status</h2>
-            <div id="statusChart" class="status-chart" aria-live="polite"></div>
+            <div class="section-heading">
+                <div>
+                    <h2>Application Pipeline &amp; Conversion Analytics</h2>
+                    <p>Track your job application progression, response ratios, and interview conversion rates.</p>
+                </div>
+            </div>
+
+            <div class="analytics-metrics-grid">
+                <div class="analytics-metric-card">
+                    <div class="metric-icon">🎯</div>
+                    <div class="metric-info">
+                        <span class="metric-caption">Interview Rate</span>
+                        <strong id="analyticsInterviewRate" class="metric-val">0%</strong>
+                        <span class="metric-sub">Applications reaching interviews</span>
+                    </div>
+                    <div class="metric-progress-ring">
+                        <svg viewBox="0 0 36 36" class="circular-chart blue">
+                            <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                            <path id="interviewRing" class="circle" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                        </svg>
+                    </div>
+                </div>
+
+                <div class="analytics-metric-card">
+                    <div class="metric-icon">⭐</div>
+                    <div class="metric-info">
+                        <span class="metric-caption">Offer Rate</span>
+                        <strong id="analyticsOfferRate" class="metric-val">0%</strong>
+                        <span class="metric-sub">Applications resulting in offers</span>
+                    </div>
+                    <div class="metric-progress-ring">
+                        <svg viewBox="0 0 36 36" class="circular-chart green">
+                            <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                            <path id="offerRing" class="circle" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                        </svg>
+                    </div>
+                </div>
+
+                <div class="analytics-metric-card">
+                    <div class="metric-icon">🚀</div>
+                    <div class="metric-info">
+                        <span class="metric-caption">Active Pipeline</span>
+                        <strong id="analyticsActiveRate" class="metric-val">0%</strong>
+                        <span class="metric-sub">In Applied or Interview stage</span>
+                    </div>
+                    <div class="metric-progress-ring">
+                        <svg viewBox="0 0 36 36" class="circular-chart purple">
+                            <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                            <path id="activeRing" class="circle" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+
+            <div class="status-chart-box">
+                <h3>Application Stage Breakdown</h3>
+                <div id="statusChart" class="status-chart" aria-live="polite"></div>
+            </div>
         </section>
 
         <section id="recommendations" data-dashboard-section hidden>
@@ -98,9 +151,9 @@
             <form id="resume-form" class="resume-form-box">
                 <div class="form-row">
                     <label for="target-role-select">
-                        Target Role
-                        <select id="target-role-select" name="role" required>
-                            <option value="">-- Select Target Role --</option>
+                        Target Role (optional)
+                        <select id="target-role-select" name="role">
+                            <option value="">-- Auto-detect from resume skills --</option>
                             <option value="Python Full-Stack Developer">Python Full-Stack Developer</option>
                             <option value="Backend Python Developer">Backend Python Developer</option>
                             <option value="Frontend Developer">Frontend Developer</option>
@@ -136,11 +189,11 @@
 
                 <div id="file-input-pane" class="tab-pane is-active">
                     <div class="drop-zone" id="dropZone">
-                        <input type="file" id="resumeFileInput" accept=".pdf,.docx,.doc,.txt" class="visually-hidden">
+                        <input type="file" id="resumeFileInput" accept=".pdf,.docx,.txt" class="visually-hidden">
                         <div class="drop-zone-content">
                             <span class="upload-icon">📄</span>
                             <p class="drop-zone-text"><strong>Click to select a file</strong> or drag and drop your resume here</p>
-                            <span class="drop-zone-hint">Supports PDF, DOCX, and TXT (Max 10MB)</span>
+                            <span class="drop-zone-hint">PDF page count is checked exactly; DOCX and TXT are estimated at 500 words per page. Maximum 2 pages (10MB).</span>
                         </div>
                         <div id="selectedFileInfo" class="selected-file-info" style="display: none;">
                             <span class="file-badge">✓ Selected</span>
@@ -247,6 +300,10 @@
                     <h2>Interview Practice</h2>
                     <p>Select one domain and difficulty level to focus your interview practice.</p>
                 </div>
+                <div class="interview-mode-toggle" id="interviewModeToggle" role="group" aria-label="Interview Mode" style="display: none;">
+                    <button type="button" id="browseModeBtn" class="toggle-view-btn is-active" aria-pressed="true">☰ Browse All</button>
+                    <button type="button" id="quizModeBtn" class="toggle-view-btn" aria-pressed="false">⏱ Timed Practice</button>
+                </div>
             </div>
 
             <form id="interview-question-form" class="interview-question-form">
@@ -284,6 +341,7 @@
                 Select a domain and level, then load your questions.
             </p>
             <div id="interview-question-list" class="interview-question-list" aria-live="polite"></div>
+            <div id="interview-quiz-panel" class="interview-quiz-panel" style="display: none;" aria-live="polite"></div>
         </section>
 
         <section id="dsa-practice" data-dashboard-section hidden>
@@ -335,7 +393,13 @@
                     <h2>My Applications</h2>
                     <p>Search, filter, and export your application history.</p>
                 </div>
-                <button id="exportCsv" class="secondary-button" type="button">Export CSV</button>
+                <div class="heading-actions">
+                    <div class="view-toggle" role="group" aria-label="Applications view mode">
+                        <button type="button" id="tableViewBtn" class="toggle-view-btn is-active" aria-pressed="true">☰ Table View</button>
+                        <button type="button" id="kanbanViewBtn" class="toggle-view-btn" aria-pressed="false">▦ Kanban Board</button>
+                    </div>
+                    <button id="exportCsv" class="secondary-button" type="button">Export CSV</button>
+                </div>
             </div>
 
             <form id="quick-add-form" class="quick-add-form">
@@ -383,8 +447,11 @@
                 <button id="clear-filters" class="text-button" type="button">Clear filters</button>
             </div>
             <p id="filter-help" class="filter-help">Showing all applications.</p>
-            <div id="applicationList" aria-live="polite">Loading applications...</div>
+            <div id="applicationList" class="applications-table-view" aria-live="polite">Loading applications...</div>
+            <div id="kanbanBoard" class="kanban-board-view" style="display: none;" aria-live="polite"></div>
         </section>
+
+        <div id="toastContainer" class="toast-container" aria-live="polite"></div>
 
         <footer class="dashboard-footer">
             <span class="creator-credit">Developed by <span class="creator-name">Rajesh</span></span>

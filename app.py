@@ -1,17 +1,19 @@
 import logging
 import os
 import secrets
-import sqlite3
 import threading
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from dotenv import load_dotenv
-import mysql.connector
-from mysql.connector import Error
+from bson import ObjectId
+from pymongo import MongoClient
+from pymongo.errors import ConfigurationError, DuplicateKeyError, PyMongoError
+from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.security import check_password_hash, generate_password_hash
+
 from ml.model import recommend_jobs
 from ml.resume_analyzer import analyze_resume_for_role, extract_text_from_file
 from ml.job_search import search_role_jobs
@@ -30,27 +32,10 @@ if not flask_secret_key and is_vercel:
         "FLASK_SECRET_KEY must be configured in Vercel Project Settings > Environment Variables."
     )
 
-db_backend = os.getenv("DB_BACKEND", "sqlite").lower()
-if is_vercel and db_backend != "mysql":
-    raise RuntimeError(
-        "Vercel requires a persistent MySQL database; configure DB_BACKEND=mysql and "
-        "set DB_HOST, DB_USER, DB_PASSWORD, and DB_NAME in Project Settings > Environment Variables."
-    )
-if is_vercel:
-    missing_db_settings = [
-        key for key in ("DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME")
-        if not os.getenv(key)
-    ]
-    if missing_db_settings:
-        raise RuntimeError(
-            "Missing required Vercel database environment variables: "
-            + ", ".join(missing_db_settings)
-            + ". Configure them in Project Settings > Environment Variables."
-        )
-
 app = Flask(__name__, static_folder="public/static")
 app.config.update(
     SECRET_KEY=flask_secret_key or secrets.token_hex(32),
+    MAX_CONTENT_LENGTH=10 * 1024 * 1024,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=os.getenv(
@@ -60,76 +45,30 @@ app.config.update(
 )
 if not flask_secret_key:
     logging.warning("FLASK_SECRET_KEY is not set; sessions will reset when the app restarts.")
-DB_ERRORS = (Error, sqlite3.Error)
-_mysql_auth_schema_initialized = False
-_mysql_auth_schema_lock = threading.Lock()
+DB_ERRORS = (PyMongoError,)
+_mongo_client = None
+_mongo_database = None
+_mongo_settings = None
+_mongo_lock = threading.Lock()
+
+
+def ensure_session_user():
+    if "user_id" not in session:
+        session.permanent = True
+        session["user_id"] = f"guest_{secrets.token_urlsafe(12)}"
+        session["user_name"] = "Guest"
+    elif "user_name" not in session or not session["user_name"]:
+        session["user_name"] = "Guest"
+    return session["user_id"], session["user_name"]
 
 
 def login_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if "user_id" not in session:
-            if request.path.startswith("/api/"):
-                return jsonify({"error": "Please sign in to continue"}), 401
-            return redirect(url_for("home", _anchor="account-access"))
+        ensure_session_user()
         return view(*args, **kwargs)
 
     return wrapped
-
-
-def initialize_mysql_auth_schema(connection):
-    global _mysql_auth_schema_initialized
-    if _mysql_auth_schema_initialized:
-        return
-
-    with _mysql_auth_schema_lock:
-        if _mysql_auth_schema_initialized:
-            return
-
-        cursor = connection.cursor()
-        try:
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    name VARCHAR(80) NOT NULL UNIQUE,
-                    password_hash VARCHAR(255) NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS applications (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    user_id INT NULL,
-                    company VARCHAR(120) NOT NULL,
-                    role VARCHAR(120) NOT NULL,
-                    status ENUM(
-                        'Applied',
-                        'Interview',
-                        'Selected',
-                        'Rejected'
-                    ) NOT NULL DEFAULT 'Applied',
-                    skills TEXT,
-                    applied_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    INDEX applications_user_id_idx (user_id)
-                )
-            """)
-            cursor.execute("SHOW COLUMNS FROM applications LIKE 'user_id'")
-            if not cursor.fetchone():
-                try:
-                    cursor.execute("ALTER TABLE applications ADD COLUMN user_id INT NULL")
-                except Error as error:
-                    if error.errno != 1060:
-                        raise
-            try:
-                cursor.execute("CREATE INDEX applications_user_id_idx ON applications (user_id)")
-            except Error as error:
-                if error.errno != 1061:
-                    raise
-            connection.commit()
-        finally:
-            cursor.close()
-
-        _mysql_auth_schema_initialized = True
 
 
 @app.route("/")
@@ -145,104 +84,48 @@ def dashboard():
 
 @app.route("/login")
 def login():
-    return redirect(url_for("home", _anchor="account-access"))
-
-
-class SQLiteCursor:
-    def __init__(self, cursor, dictionary=False):
-        self.cursor = cursor
-        self.dictionary = dictionary
-
-    def execute(self, query, params=None):
-        query = query.replace("%s", "?")
-        if params is None:
-            self.cursor.execute(query)
-        else:
-            self.cursor.execute(query, params)
-        return self
-
-    def fetchall(self):
-        rows = self.cursor.fetchall()
-        return [dict(row) for row in rows] if self.dictionary else rows
-
-    def fetchone(self):
-        row = self.cursor.fetchone()
-        return dict(row) if self.dictionary and row else row
-
-    @property
-    def lastrowid(self):
-        return self.cursor.lastrowid
-
-    @property
-    def rowcount(self):
-        return self.cursor.rowcount
-
-    def close(self):
-        self.cursor.close()
-
-
-class SQLiteConnection:
-    def __init__(self, connection):
-        self.connection = connection
-
-    def cursor(self, dictionary=False):
-        return SQLiteCursor(self.connection.cursor(), dictionary=dictionary)
-
-    def commit(self):
-        self.connection.commit()
-
-    def close(self):
-        self.connection.close()
+    return redirect(url_for("home"))
 
 
 def get_db():
-    if os.getenv("DB_BACKEND", "sqlite").lower() == "sqlite":
-        database_path = Path(
-            os.getenv("SQLITE_PATH", str(BASE_DIR / "database" / "applications.sqlite3"))
-        )
-        database_path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(database_path)
-        connection.row_factory = sqlite3.Row
-        connection.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE COLLATE NOCASE,
-                password_hash TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        connection.execute("""
-            CREATE TABLE IF NOT EXISTS applications (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                company VARCHAR(120) NOT NULL,
-                role VARCHAR(120) NOT NULL,
-                status TEXT NOT NULL DEFAULT 'Applied'
-                    CHECK (status IN ('Applied', 'Interview', 'Selected', 'Rejected')),
-                skills TEXT,
-                applied_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        application_columns = {
-            column["name"]
-            for column in connection.execute("PRAGMA table_info(applications)")
-        }
-        if "user_id" not in application_columns:
-            connection.execute("ALTER TABLE applications ADD COLUMN user_id INTEGER")
-        return SQLiteConnection(connection)
+    global _mongo_client, _mongo_database, _mongo_settings
 
-    connection = mysql.connector.connect(
-        host=os.getenv("DB_HOST"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
-        database=os.getenv("DB_NAME")
-    )
-    try:
-        initialize_mysql_auth_schema(connection)
-    except Exception:
-        connection.close()
-        raise
-    return connection
+    uri = os.getenv("MONGODB_URI")
+    if not uri:
+        raise ConfigurationError(
+            "MONGODB_URI must be configured before using database-backed endpoints."
+        )
+    database_name = os.getenv("MONGODB_DB_NAME", "devtrack_ai")
+    settings = (uri, database_name)
+
+    with _mongo_lock:
+        if settings != _mongo_settings:
+            if _mongo_client is not None:
+                _mongo_client.close()
+            _mongo_client = None
+            _mongo_database = None
+            _mongo_settings = None
+
+            client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+            try:
+                client.admin.command("ping")
+                database = client[database_name]
+                database.users.create_index("name_key", unique=True)
+                database.applications.create_index([("user_id", 1), ("_id", -1)])
+            except PyMongoError:
+                client.close()
+                raise
+
+            _mongo_client = client
+            _mongo_database = database
+            _mongo_settings = settings
+
+    return _mongo_database
+
+
+@app.errorhandler(413)
+def request_entity_too_large(_error):
+    return jsonify({"error": "Request body must be 10 MB or smaller"}), 413
 
 
 @app.route("/api/auth/register", methods=["POST"])
@@ -259,43 +142,41 @@ def api_register():
     if not 8 <= len(password) <= 128:
         return jsonify({"error": "Password must be between 8 and 128 characters"}), 400
 
-    conn = None
-    cursor = None
     try:
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM users")
-        is_first_user = cursor.fetchone()[0] == 0
-        cursor.execute("SELECT id FROM users WHERE name=%s", (name,))
-        if cursor.fetchone():
+        database = get_db()
+        is_first_user = database.users.count_documents({}) == 0
+        name_key = name.casefold()
+        if database.users.find_one({"name_key": name_key}):
             return jsonify({"error": "An account with that name already exists"}), 409
 
-        cursor.execute(
-            "INSERT INTO users (name, password_hash) VALUES (%s, %s)",
-            (name, generate_password_hash(password)),
-        )
-        user_id = cursor.lastrowid
+        guest_user_id = session.get("user_id")
+        user = {
+            "name": name,
+            "name_key": name_key,
+            "password_hash": generate_password_hash(password),
+            "created_at": datetime.now(timezone.utc),
+        }
+        user_id = database.users.insert_one(user).inserted_id
         if is_first_user:
-            cursor.execute(
-                "UPDATE applications SET user_id=%s WHERE user_id IS NULL",
-                (user_id,),
+            database.applications.update_many(
+                {"user_id": None},
+                {"$set": {"user_id": str(user_id)}},
             )
-        conn.commit()
+        if guest_user_id and guest_user_id.startswith("guest_"):
+            database.applications.update_many(
+                {"user_id": guest_user_id},
+                {"$set": {"user_id": str(user_id)}},
+            )
         session.clear()
         session.permanent = True
-        session["user_id"] = user_id
+        session["user_id"] = str(user_id)
         session["user_name"] = name
         return jsonify({"message": "Account created", "redirect": url_for("dashboard")}), 201
-    except DB_ERRORS as error:
-        if isinstance(error, sqlite3.IntegrityError) or getattr(error, "errno", None) == 1062:
-            return jsonify({"error": "An account with that name already exists"}), 409
+    except DuplicateKeyError:
+        return jsonify({"error": "An account with that name already exists"}), 409
+    except DB_ERRORS:
         logging.exception("Could not register account")
         return jsonify({"error": "Could not create your account"}), 500
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
 
 
 @app.route("/api/auth/login", methods=["POST"])
@@ -308,32 +189,20 @@ def api_login():
     if not 2 <= len(name.strip()) <= 80 or not 1 <= len(password) <= 128:
         return jsonify({"error": "Invalid name or password"}), 400
 
-    conn = None
-    cursor = None
     try:
-        conn = get_db()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            "SELECT id, name, password_hash FROM users WHERE name=%s",
-            (name.strip(),),
-        )
-        user = cursor.fetchone()
+        database = get_db()
+        user = database.users.find_one({"name_key": name.strip().casefold()})
         if not user or not check_password_hash(user["password_hash"], password):
             return jsonify({"error": "Invalid name or password"}), 401
 
         session.clear()
         session.permanent = True
-        session["user_id"] = user["id"]
+        session["user_id"] = str(user["_id"])
         session["user_name"] = user["name"]
         return jsonify({"message": "Signed in", "redirect": url_for("dashboard")})
     except DB_ERRORS:
         logging.exception("Could not sign in")
         return jsonify({"error": "Could not sign in right now"}), 500
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
 
 
 @app.route("/api/auth/logout", methods=["POST"])
@@ -341,7 +210,7 @@ def api_logout():
     session.clear()
     return jsonify({
         "message": "Signed out",
-        "redirect": url_for("home", _anchor="account-access"),
+        "redirect": url_for("home"),
     })
 
 
@@ -349,7 +218,7 @@ def api_logout():
 @login_required
 def logout():
     session.clear()
-    return redirect(url_for("home", _anchor="account-access"))
+    return redirect(url_for("home"))
 
 
 def request_json_object():
@@ -360,21 +229,16 @@ def request_json_object():
 @app.route("/api/jobs", methods=["GET"])
 @login_required
 def get_jobs():
+    user_id, _ = ensure_session_user()
     try:
-        conn = get_db()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("""
-            SELECT id, company, role, status, skills, applied_date
-            FROM applications
-            WHERE user_id=%s
-            ORDER BY id DESC
-        """, (session["user_id"],))
-        jobs = cursor.fetchall()
-
-        cursor.close()
-        conn.close()
-
+        jobs = list(
+            get_db().applications.find(
+                {"user_id": user_id},
+                {"company": 1, "role": 1, "status": 1, "skills": 1, "applied_date": 1},
+            ).sort("_id", -1)
+        )
         for job in jobs:
+            job["id"] = str(job.pop("_id"))
             if job["applied_date"]:
                 applied_date = job["applied_date"]
                 job["applied_date"] = (
@@ -385,13 +249,15 @@ def get_jobs():
 
         return jsonify(jobs)
 
-    except DB_ERRORS as e:
-        return jsonify({"error": str(e)}), 500
+    except DB_ERRORS:
+        logging.exception("Could not load applications")
+        return jsonify({"error": "Could not load applications right now"}), 500
 
 
 @app.route("/api/jobs", methods=["POST"])
 @login_required
 def add_job():
+    user_id, _ = ensure_session_user()
     data = request_json_object()
 
     company = data.get("company", "")
@@ -415,36 +281,29 @@ def add_job():
         return jsonify({"error": "Invalid status"}), 400
 
     try:
-        conn = get_db()
-        cursor = conn.cursor()
-
-        cursor.execute(
-            """
-            INSERT INTO applications
-            (user_id, company, role, status, skills)
-            VALUES (%s, %s, %s, %s, %s)
-            """,
-            (session["user_id"], company, role, status, skills)
-        )
-
-        conn.commit()
-        new_id = cursor.lastrowid
-
-        cursor.close()
-        conn.close()
+        result = get_db().applications.insert_one({
+            "user_id": user_id,
+            "company": company,
+            "role": role,
+            "status": status,
+            "skills": skills,
+            "applied_date": datetime.now(timezone.utc),
+        })
 
         return jsonify({
             "message": "Application added successfully",
-            "id": new_id
+            "id": str(result.inserted_id)
         }), 201
 
-    except DB_ERRORS as e:
-        return jsonify({"error": str(e)}), 500
+    except DB_ERRORS:
+        logging.exception("Could not add application")
+        return jsonify({"error": "Could not add application right now"}), 500
 
 
-@app.route("/api/jobs/<int:job_id>", methods=["PUT"])
+@app.route("/api/jobs/<job_id>", methods=["PUT"])
 @login_required
 def update_job(job_id):
+    user_id, _ = ensure_session_user()
     data = request_json_object()
     status = data.get("status", "")
     if not isinstance(status, str):
@@ -454,55 +313,43 @@ def update_job(job_id):
     if status not in ["Applied", "Interview", "Selected", "Rejected"]:
         return jsonify({"error": "Invalid status"}), 400
 
+    if not ObjectId.is_valid(job_id):
+        return jsonify({"error": "Application not found"}), 404
+
     try:
-        conn = get_db()
-        cursor = conn.cursor()
-
-        cursor.execute(
-            "UPDATE applications SET status=%s WHERE id=%s AND user_id=%s",
-            (status, job_id, session["user_id"])
+        result = get_db().applications.update_one(
+            {"_id": ObjectId(job_id), "user_id": user_id},
+            {"$set": {"status": status}},
         )
-
-        conn.commit()
-        changed = cursor.rowcount
-
-        cursor.close()
-        conn.close()
-
-        if not changed:
+        if not result.matched_count:
             return jsonify({"error": "Application not found"}), 404
 
         return jsonify({"message": "Status updated successfully"})
 
-    except DB_ERRORS as e:
-        return jsonify({"error": str(e)}), 500
+    except DB_ERRORS:
+        logging.exception("Could not update application")
+        return jsonify({"error": "Could not update application right now"}), 500
 
 
-@app.route("/api/jobs/<int:job_id>", methods=["DELETE"])
+@app.route("/api/jobs/<job_id>", methods=["DELETE"])
 @login_required
 def delete_job(job_id):
+    user_id, _ = ensure_session_user()
+    if not ObjectId.is_valid(job_id):
+        return jsonify({"error": "Application not found"}), 404
+
     try:
-        conn = get_db()
-        cursor = conn.cursor()
-
-        cursor.execute(
-            "DELETE FROM applications WHERE id=%s AND user_id=%s",
-            (job_id, session["user_id"])
+        result = get_db().applications.delete_one(
+            {"_id": ObjectId(job_id), "user_id": user_id}
         )
-
-        conn.commit()
-        changed = cursor.rowcount
-
-        cursor.close()
-        conn.close()
-
-        if not changed:
+        if not result.deleted_count:
             return jsonify({"error": "Application not found"}), 404
 
         return jsonify({"message": "Application deleted"})
 
-    except DB_ERRORS as e:
-        return jsonify({"error": str(e)}), 500
+    except DB_ERRORS:
+        logging.exception("Could not delete application")
+        return jsonify({"error": "Could not delete application right now"}), 500
 
 
 @app.route("/api/recommend", methods=["POST"])
@@ -529,7 +376,10 @@ def analyze_resume():
         target_role = ""
         resume_text = ""
 
-        if "resume" in request.files:
+        if request.files:
+            if "resume" not in request.files:
+                return jsonify({"error": "Only resume files are valid for analysis"}), 400
+
             file = request.files["resume"]
             if not file or not file.filename:
                 return jsonify({"error": "No resume file selected"}), 400
@@ -546,19 +396,19 @@ def analyze_resume():
         target_role = target_role.strip()
         resume_text = resume_text.strip()
 
-        if not target_role:
-            return jsonify({"error": "Target role is required for resume analysis"}), 400
-
         if not resume_text:
             return jsonify({"error": "Please provide a resume file (PDF, DOCX, TXT) or paste resume text"}), 400
 
         analysis = analyze_resume_for_role(resume_text, target_role)
         return jsonify(analysis)
 
+    except RequestEntityTooLarge:
+        raise
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": f"Failed to analyze resume: {str(e)}"}), 500
+    except Exception:
+        logging.exception("Failed to analyze resume")
+        return jsonify({"error": "Failed to analyze resume right now"}), 500
 
 
 @app.route("/api/search-jobs", methods=["GET", "POST"])
@@ -587,6 +437,9 @@ def search_jobs():
         if not role:
             return jsonify({"error": "Role is required for job search"}), 400
 
+        if platform not in {"all", "remoteok", "jobicy", "arbeitnow"}:
+            return jsonify({"error": "Invalid job platform"}), 400
+
         if employment_type not in {"all", "fresher", "internship", "part_time", "freelance"}:
             return jsonify({"error": "Invalid employment type"}), 400
 
@@ -598,8 +451,9 @@ def search_jobs():
         )
         return jsonify(results)
 
-    except Exception as e:
-        return jsonify({"error": f"Failed to search jobs: {str(e)}"}), 500
+    except Exception:
+        logging.exception("Failed to search jobs")
+        return jsonify({"error": "Failed to search jobs right now"}), 500
 
 
 @app.route("/api/interview-questions", methods=["GET"])
@@ -617,8 +471,6 @@ def interview_questions():
         "level": level,
         "questions": get_interview_questions(topic, level),
     })
-
-
 @app.route("/api/dsa-questions", methods=["GET"])
 def dsa_questions():
     topic = (request.args.get("topic") or "all").strip().lower()
@@ -628,13 +480,10 @@ def dsa_questions():
         return jsonify({"error": "Choose a valid DSA topic"}), 400
     if difficulty != "all" and difficulty not in DSA_LEVELS:
         return jsonify({"error": "Choose a valid difficulty level"}), 400
-
     return jsonify({
         "topic": topic,
         "difficulty": difficulty,
         "questions": get_dsa_questions(topic, difficulty),
     })
-
-
 if __name__ == "__main__":
     app.run(debug=True)

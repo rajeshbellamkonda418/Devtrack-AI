@@ -1,5 +1,8 @@
+import io
 import re
+import zipfile
 from typing import Dict, List, Any
+from xml.etree import ElementTree
 
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -39,14 +42,63 @@ def normalize_text(text: str) -> str:
     return text
 
 
+ALLOWED_RESUME_EXTENSIONS = {"pdf", "docx", "txt"}
+MAX_RESUME_PAGES = 2
+ESTIMATED_WORDS_PER_PAGE = 500
+
+
+def _validate_resume_page_count(page_count: int, estimated: bool = False) -> None:
+    if page_count > MAX_RESUME_PAGES:
+        page_description = "is estimated at" if estimated else "has"
+        raise ValueError(
+            f"Resume must be no more than {MAX_RESUME_PAGES} pages; "
+            f"the uploaded file {page_description} {page_count} pages."
+        )
+
+
+def _estimated_text_pages(text: str) -> int:
+    words = len(re.findall(r"\b\w+\b", text))
+    estimated_pages = (words + ESTIMATED_WORDS_PER_PAGE - 1) // ESTIMATED_WORDS_PER_PAGE
+    explicit_pages = text.count("\f") + 1
+    return max(1, estimated_pages, explicit_pages)
+
+
+def _docx_page_count(file_storage, text: str) -> int:
+    page_count = _estimated_text_pages(text)
+    file_storage.seek(0)
+    document_xml = file_storage.read()
+    file_storage.seek(0)
+    with zipfile.ZipFile(io.BytesIO(document_xml)) as archive:
+        if "docProps/app.xml" in archive.namelist():
+            properties = ElementTree.fromstring(archive.read("docProps/app.xml"))
+            pages = properties.find("{*}Pages")
+            if pages is not None and pages.text and pages.text.isdigit():
+                page_count = max(page_count, int(pages.text))
+
+        if "word/document.xml" in archive.namelist():
+            document = ElementTree.fromstring(archive.read("word/document.xml"))
+            namespaces = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+            page_breaks = document.findall(".//w:br[@w:type='page']", namespaces)
+            page_breaks += document.findall(".//w:pageBreakBefore", namespaces)
+            page_count = max(page_count, len(page_breaks) + 1)
+
+    return page_count
+
+
 def extract_text_from_file(file_storage, filename: str) -> str:
-    ext = filename.lower().split(".")[-1] if "." in filename else ""
+    ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+    if ext not in ALLOWED_RESUME_EXTENSIONS:
+        raise ValueError(
+            f"Unsupported file format: .{ext or 'unknown'}. Please upload a PDF, DOCX, or TXT resume file."
+        )
+
     text = ""
 
     if ext == "pdf":
         try:
             import pypdf
             reader = pypdf.PdfReader(file_storage)
+            _validate_resume_page_count(len(reader.pages))
             pages_text = []
             for page in reader.pages:
                 page_text = page.extract_text()
@@ -54,9 +106,11 @@ def extract_text_from_file(file_storage, filename: str) -> str:
                     pages_text.append(page_text)
             text = "\n".join(pages_text)
         except Exception as e:
+            if isinstance(e, ValueError):
+                raise
             raise ValueError(f"Could not parse PDF file: {str(e)}")
 
-    elif ext in ("docx", "doc"):
+    elif ext == "docx":
         try:
             import docx
             doc = docx.Document(file_storage)
@@ -67,10 +121,16 @@ def extract_text_from_file(file_storage, filename: str) -> str:
                         if cell.text:
                             paragraphs.append(cell.text)
             text = "\n".join(paragraphs)
+            _validate_resume_page_count(
+                _docx_page_count(file_storage, text),
+                estimated=True,
+            )
         except Exception as e:
+            if isinstance(e, ValueError):
+                raise
             raise ValueError(f"Could not parse Word document: {str(e)}")
 
-    elif ext in ("txt", "rtf", "md"):
+    elif ext == "txt":
         try:
             content = file_storage.read()
             if isinstance(content, bytes):
@@ -80,11 +140,14 @@ def extract_text_from_file(file_storage, filename: str) -> str:
                     text = content.decode("latin-1", errors="replace")
             else:
                 text = str(content)
+            _validate_resume_page_count(
+                _estimated_text_pages(text),
+                estimated=True,
+            )
         except Exception as e:
+            if isinstance(e, ValueError):
+                raise
             raise ValueError(f"Could not read text file: {str(e)}")
-    else:
-        raise ValueError(f"Unsupported file format: .{ext}. Please upload a PDF, DOCX, or TXT file.")
-
     return text.strip()
 
 
@@ -209,9 +272,106 @@ def get_role_profile(role_name: str) -> Dict[str, Any]:
     }
 
 
-def analyze_resume_for_role(resume_text: str, target_role: str) -> Dict[str, Any]:
+def get_resume_role_recommendations(resume_text: str, limit: int = 5) -> List[Dict[str, Any]]:
+    if not resume_text or len(resume_text.strip()) < 20:
+        return []
+
+    resume_skills = extract_skills_from_text(resume_text)
+    resume_skill_set = {skill.lower() for skill in resume_skills}
+    normalized_resume = normalize_text(resume_text)
+    user_vec = vectorizer.transform([normalized_resume])
+
+    scored_profiles = []
+    for profile in JOB_PROFILES:
+        profile_skills = extract_skills_from_text(profile["skills"])
+        profile_skill_set = {skill.lower() for skill in profile_skills}
+        overlap = len(resume_skill_set & profile_skill_set)
+        overlap_ratio = overlap / max(len(profile_skill_set), 1)
+        matched_skills = [
+            skill for skill in profile_skills if skill.lower() in resume_skill_set
+        ]
+
+        profile_vec = vectorizer.transform([normalize_text(profile["skills"])])
+        vector_sim = float(cosine_similarity(user_vec, profile_vec)[0][0])
+        score = round((overlap_ratio * 0.7 + vector_sim * 0.3) * 100)
+
+        if matched_skills:
+            scored_profiles.append({
+                "title": profile["title"],
+                "match": max(10, min(99, score)),
+                "matched_skills": matched_skills,
+            })
+
+    scored_profiles.sort(key=lambda item: item["match"], reverse=True)
+    seen = set()
+    recommended_roles = []
+    for role in scored_profiles:
+        if role["title"] in seen:
+            continue
+        seen.add(role["title"])
+        recommended_roles.append(role)
+        if len(recommended_roles) >= limit:
+            break
+
+    return recommended_roles
+
+
+def validate_resume_content(resume_text: str) -> None:
     if not resume_text or len(resume_text.strip()) < 20:
         raise ValueError("Resume content is too short or empty. Please provide readable resume text.")
+
+    section_headings = {
+        "summary", "professional summary", "profile", "profile summary", "objective",
+        "experience", "professional experience", "work experience", "work history",
+        "employment", "employment history", "career history",
+        "education", "academic background", "skills", "technical skills",
+        "technical expertise", "core competencies", "projects", "key projects",
+        "certifications", "licenses",
+    }
+    headings_found = {
+        line.strip().rstrip(":").lower()
+        for line in resume_text.splitlines()
+        if line.strip().rstrip(":").lower() in section_headings
+    }
+    skills_found = extract_skills_from_text(resume_text)
+    contact_info = extract_contact_info(resume_text)
+    has_contact = bool(
+        contact_info["email"]
+        or contact_info["phone"]
+        or contact_info["has_linkedin"]
+        or contact_info["has_github"]
+    )
+    has_bullets = bool(re.search(r"(?m)^\s*[-*•▪●◦‣]\s+\S", resume_text))
+    has_dates = bool(re.search(r"\b(?:19|20)\d{2}\b", resume_text))
+
+    has_resume_structure = (
+        len(headings_found) >= 2
+        or (
+            len(headings_found) >= 1
+            and (has_contact or has_bullets or has_dates)
+        )
+        or (has_contact and len(skills_found) >= 2 and (has_bullets or has_dates))
+    )
+    if not has_resume_structure:
+        raise ValueError(
+            "This content does not look like a resume. Include resume sections such as "
+            "Experience, Education, Skills, or Projects, or provide contact details and "
+            "work history."
+        )
+
+
+def analyze_resume_for_role(resume_text: str, target_role: str) -> Dict[str, Any]:
+    validate_resume_content(resume_text)
+
+    recommended_roles = get_resume_role_recommendations(resume_text, limit=5)
+    target_role = target_role.strip()
+    if not target_role:
+        if not recommended_roles:
+            raise ValueError(
+                "Could not identify a matching role from this resume. Add relevant skills "
+                "or choose a target role and try again."
+            )
+        target_role = recommended_roles[0]["title"]
 
     profile = get_role_profile(target_role)
     role_skills_raw = profile["skills"].split()
@@ -378,4 +538,5 @@ def analyze_resume_for_role(resume_text: str, target_role: str) -> Dict[str, Any
         "contact_info": contact_info,
         "sections_detected": sections,
         "ats_tips": ats_tips,
+        "recommended_roles": recommended_roles,
     }

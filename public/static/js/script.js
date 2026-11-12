@@ -1,9 +1,10 @@
 const message = document.getElementById("message");
-
 const skillsInput = document.getElementById("skills-input");
 const skillButtons = document.querySelectorAll("[data-skill]");
 
 function syncSkillSuggestions() {
+    if (!skillsInput) return;
+
     const selected = new Set(
         skillsInput.value.split(",").map(skill => skill.trim().toLowerCase())
     );
@@ -16,6 +17,8 @@ function syncSkillSuggestions() {
 
 skillButtons.forEach(button => {
     button.addEventListener("click", () => {
+        if (!skillsInput) return;
+
         const selected = skillsInput.value.split(",")
             .map(skill => skill.trim())
             .filter(Boolean);
@@ -35,10 +38,13 @@ skillButtons.forEach(button => {
     });
 });
 
-skillsInput.addEventListener("input", syncSkillSuggestions);
-syncSkillSuggestions();
+if (skillsInput) {
+    skillsInput.addEventListener("input", syncSkillSuggestions);
+    syncSkillSuggestions();
+}
 
 function notify(text, isError = false) {
+    if (!message) return;
     message.textContent = text;
     message.style.color = isError ? "#ff9292" : "#c8f169";
 }
@@ -124,7 +130,7 @@ jobForm?.addEventListener("submit", async event => {
         const result = await response.json();
 
         if (!response.ok) {
-            throw new Error(result.error);
+            throw new Error(result.error || "Could not add application.");
         }
 
         formElement.reset();
@@ -183,11 +189,16 @@ document.getElementById("jobs-list")?.addEventListener("click", async event => {
     }
 });
 
-document.getElementById("recommend-form").addEventListener("submit", async event => {
+const recommendForm = document.getElementById("recommend-form");
+recommendForm?.addEventListener("submit", async event => {
     event.preventDefault();
 
-    const skills = document.getElementById("skills-input").value.trim();
+    const input = document.getElementById("skills-input");
+    if (!input) return;
+
+    const skills = input.value.trim();
     const output = document.getElementById("recommendations");
+    if (!output) return;
 
     output.innerHTML = "<p class='muted'>Finding suitable roles...</p>";
 
@@ -203,7 +214,7 @@ document.getElementById("recommend-form").addEventListener("submit", async event
         const result = await response.json();
 
         if (!response.ok) {
-            throw new Error(result.error);
+            throw new Error(result.error || "Could not load recommendations.");
         }
 
         if (!result.recommendations.length) {
@@ -256,6 +267,8 @@ function isSafeJobUrl(value) {
 }
 
 function renderHomeJobResults(data) {
+    if (!homeJobLinkList || !homeJobLinks || !homeJobResults || !homeJobMessage) return;
+
     const links = (data.platform_links || [])
         .filter(platform => isSafeJobUrl(platform.url))
         .map(platform => {

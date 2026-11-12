@@ -1028,6 +1028,77 @@ th {
     gap: 6px;
 }
 
+.resume-role-box {
+    align-items: flex-start;
+}
+
+.resume-role-option {
+    display: grid;
+    justify-items: start;
+    gap: 4px;
+}
+
+.resume-role-option small {
+    color: #94a3b8;
+    font-size: 11px;
+}
+
+.resume-role-chip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    background: #0f172a;
+    color: #e2e8f0;
+    cursor: pointer;
+    font: inherit;
+}
+
+.resume-role-chip:hover,
+.resume-role-chip:focus-visible {
+    border-color: #4ade80;
+    background: #172554;
+}
+
+.resume-role-chip strong {
+    color: #4ade80;
+}
+
+.resume-jobs-panel {
+    margin-top: 18px;
+}
+
+.resume-jobs-panel h4 {
+    margin-bottom: 10px;
+}
+
+.resume-recommended-jobs {
+    display: grid;
+    gap: 8px;
+}
+
+.resume-job-card {
+    display: grid;
+    gap: 4px;
+    padding: 12px;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    background: #0f172a;
+}
+
+.resume-job-card p {
+    color: #94a3b8;
+    font-size: 13px;
+}
+
+.resume-job-card a {
+    width: fit-content;
+    color: #93c5fd;
+    font-size: 13px;
+}
+
 .skill-tag {
     font-size: 12px;
     padding: 4px 10px;
@@ -1680,5 +1751,599 @@ th {
     .salary-level-control {
         grid-column: auto;
         grid-template-columns: 1fr;
+    }
+}
+
+/* ============================================================
+   PIPELINE ANALYTICS & CIRCULAR CHARTS
+   ============================================================ */
+.analytics-metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 20px;
+    margin: 25px 0 35px;
+}
+
+.analytics-metric-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 22px;
+    background: linear-gradient(145deg, #1e293b, #151f30);
+    border: 1px solid #334155;
+    border-radius: 14px;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.analytics-metric-card:hover {
+    transform: translateY(-3px);
+    border-color: #60a5fa;
+    box-shadow: 0 12px 28px rgb(0 0 0 / 22%);
+}
+
+.analytics-metric-card .metric-icon {
+    font-size: 1.8rem;
+    line-height: 1;
+    margin-right: 12px;
+}
+
+.analytics-metric-card .metric-info {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    flex: 1;
+}
+
+.analytics-metric-card .metric-caption {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #94a3b8;
+    font-weight: 600;
+}
+
+.analytics-metric-card .metric-val {
+    font-size: 1.9rem;
+    color: #f8fafc;
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+.analytics-metric-card .metric-sub {
+    font-size: 0.8rem;
+    color: #64748b;
+}
+
+.metric-progress-ring {
+    width: 62px;
+    height: 62px;
+    flex-shrink: 0;
+}
+
+.circular-chart {
+    display: block;
+    margin: 0 auto;
+    max-width: 100%;
+    max-height: 100%;
+}
+
+.circular-chart .circle-bg {
+    fill: none;
+    stroke: rgb(51 65 85 / 40%);
+    stroke-width: 3.5;
+}
+
+.circular-chart .circle {
+    fill: none;
+    stroke-width: 3.5;
+    stroke-linecap: round;
+    transition: stroke-dasharray 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.circular-chart.blue .circle { stroke: #60a5fa; }
+.circular-chart.green .circle { stroke: #34d399; }
+.circular-chart.purple .circle { stroke: #a78bfa; }
+
+.status-chart-box {
+    background: #172235;
+    border: 1px solid #334155;
+    border-radius: 14px;
+    padding: 24px;
+    margin-top: 10px;
+}
+
+.status-chart-box h3 {
+    font-size: 1.1rem;
+    color: #cbd5e1;
+    margin-bottom: 20px;
+}
+
+/* ============================================================
+   KANBAN BOARD VIEW
+   ============================================================ */
+.heading-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.view-toggle {
+    display: inline-flex;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 9px;
+    padding: 3px;
+    gap: 2px;
+}
+
+.toggle-view-btn {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    padding: 6px 14px;
+    border-radius: 7px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.toggle-view-btn:hover {
+    color: #f1f5f9;
+    background: rgb(51 65 85 / 40%);
+}
+
+.toggle-view-btn.is-active {
+    background: #2563eb;
+    color: #fff;
+    box-shadow: 0 2px 8px rgb(37 99 235 / 35%);
+}
+
+.kanban-board-view {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(260px, 1fr));
+    gap: 16px;
+    margin-top: 24px;
+    overflow-x: auto;
+    padding-bottom: 12px;
+}
+
+.kanban-col {
+    background: #111a2e;
+    border: 1px solid rgb(51 65 85 / 65%);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    min-height: 380px;
+    padding: 14px;
+}
+
+.kanban-col-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid rgb(51 65 85 / 50%);
+}
+
+.kanban-col-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: #e2e8f0;
+}
+
+.status-dot-sm {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.dot-applied { background: #60a5fa; box-shadow: 0 0 8px #60a5fa; }
+.dot-interview { background: #fbbf24; box-shadow: 0 0 8px #fbbf24; }
+.dot-selected { background: #34d399; box-shadow: 0 0 8px #34d399; }
+.dot-rejected { background: #f87171; box-shadow: 0 0 8px #f87171; }
+
+.kanban-count-pill {
+    background: #1e293b;
+    border: 1px solid #334155;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    color: #94a3b8;
+    font-weight: 600;
+}
+
+.kanban-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    flex: 1;
+}
+
+.kanban-card {
+    background: #1a2438;
+    border: 1px solid #2d3b54;
+    border-left: 4px solid #60a5fa;
+    border-radius: 10px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.kanban-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 18px rgb(0 0 0 / 28%);
+    border-color: #3b82f6;
+}
+
+.kanban-card.status-applied { border-left-color: #60a5fa; }
+.kanban-card.status-interview { border-left-color: #fbbf24; }
+.kanban-card.status-selected { border-left-color: #34d399; }
+.kanban-card.status-rejected { border-left-color: #f87171; }
+
+.kanban-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.kanban-card-company {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #f1f5f9;
+    line-height: 1.25;
+}
+
+.kanban-card-role {
+    font-size: 0.88rem;
+    color: #93c5fd;
+    font-weight: 500;
+}
+
+.kanban-card-skills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.kanban-skill-tag {
+    font-size: 0.72rem;
+    background: #0f172a;
+    border: 1px solid #334155;
+    color: #cbd5e1;
+    padding: 1px 7px;
+    border-radius: 4px;
+}
+
+.kanban-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 6px;
+    padding-top: 8px;
+    border-top: 1px solid rgb(51 65 85 / 35%);
+}
+
+.kanban-card-date {
+    font-size: 0.75rem;
+    color: #64748b;
+}
+
+.kanban-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.kanban-stage-select {
+    background: #0f172a;
+    border: 1px solid #334155;
+    color: #e2e8f0;
+    font-size: 0.78rem;
+    padding: 3px 6px;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.kanban-delete-btn {
+    background: transparent;
+    border: none;
+    color: #64748b;
+    font-size: 0.95rem;
+    cursor: pointer;
+    padding: 2px 5px;
+    border-radius: 4px;
+    transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.kanban-delete-btn:hover {
+    color: #f87171;
+    background: rgb(248 113 113 / 10%);
+}
+
+.kanban-empty {
+    border: 2px dashed rgb(51 65 85 / 50%);
+    border-radius: 8px;
+    padding: 24px 12px;
+    text-align: center;
+    color: #64748b;
+    font-size: 0.85rem;
+    margin: auto 0;
+}
+
+/* ============================================================
+   TIMED MOCK INTERVIEW FLASHCARD PANEL
+   ============================================================ */
+.interview-quiz-panel {
+    background: linear-gradient(150deg, #1b263b, #111a2e);
+    border: 1px solid #334155;
+    border-radius: 16px;
+    padding: 28px;
+    margin-top: 20px;
+    position: relative;
+    box-shadow: 0 16px 36px rgb(0 0 0 / 25%);
+}
+
+.quiz-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 14px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid rgb(51 65 85 / 60%);
+}
+
+.quiz-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.quiz-progress-text {
+    font-size: 0.9rem;
+    color: #94a3b8;
+    font-weight: 600;
+}
+
+.quiz-badge {
+    background: #0f172a;
+    border: 1px solid #3b82f6;
+    color: #93c5fd;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.quiz-timer-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.quiz-timer-display {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    padding: 5px 12px;
+    border-radius: 999px;
+    font-family: monospace;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #38bdf8;
+}
+
+.quiz-timer-display.is-warning {
+    color: #f87171;
+    border-color: #f87171;
+    animation: pulseGlow 1s infinite alternate;
+}
+
+@keyframes pulseGlow {
+    from { box-shadow: 0 0 4px rgb(248 113 113 / 30%); }
+    to { box-shadow: 0 0 14px rgb(248 113 113 / 70%); }
+}
+
+.quiz-timer-btn {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #cbd5e1;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.quiz-timer-btn:hover {
+    background: #334155;
+    color: #fff;
+}
+
+.quiz-question-box {
+    margin: 24px 0 18px;
+}
+
+.quiz-question-title {
+    font-size: 1.28rem;
+    font-weight: 700;
+    color: #f8fafc;
+    line-height: 1.4;
+}
+
+.quiz-answer-toggle-btn {
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    padding: 9px 18px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.15s ease;
+}
+
+.quiz-answer-toggle-btn:hover {
+    background: #1d4ed8;
+    transform: translateY(-1px);
+}
+
+.quiz-answer-box {
+    margin-top: 18px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-left: 4px solid #34d399;
+    border-radius: 10px;
+    padding: 18px;
+    color: #cbd5e1;
+    line-height: 1.6;
+    font-size: 0.95rem;
+}
+
+.quiz-answer-box strong {
+    color: #34d399;
+    display: block;
+    margin-bottom: 6px;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.quiz-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-top: 26px;
+    padding-top: 20px;
+    border-top: 1px solid rgb(51 65 85 / 60%);
+}
+
+.quiz-rating-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.quiz-rating-btn {
+    border: 1px solid #334155;
+    background: #1e293b;
+    color: #cbd5e1;
+    padding: 7px 14px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.quiz-rating-btn.mastered:hover,
+.quiz-rating-btn.mastered.is-active {
+    background: rgb(52 211 153 / 15%);
+    border-color: #34d399;
+    color: #34d399;
+}
+
+.quiz-rating-btn.review:hover,
+.quiz-rating-btn.review.is-active {
+    background: rgb(251 191 36 / 15%);
+    border-color: #fbbf24;
+    color: #fbbf24;
+}
+
+.quiz-nav-group {
+    display: flex;
+    gap: 8px;
+}
+
+.quiz-nav-btn {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #cbd5e1;
+    padding: 7px 16px;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.quiz-nav-btn:hover:not(:disabled) {
+    background: #334155;
+    color: #fff;
+}
+
+.quiz-nav-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+/* ============================================================
+   TOAST NOTIFICATION COMPONENT
+   ============================================================ */
+.toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 99999;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+}
+
+.toast {
+    pointer-events: auto;
+    background: rgb(15 23 42 / 92%);
+    backdrop-filter: blur(12px);
+    border: 1px solid #334155;
+    border-left: 4px solid #60a5fa;
+    color: #f1f5f9;
+    padding: 12px 18px;
+    border-radius: 9px;
+    box-shadow: 0 10px 25px rgb(0 0 0 / 35%);
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 260px;
+    max-width: 380px;
+    animation: toastSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.toast.toast-success { border-left-color: #34d399; }
+.toast.toast-error { border-left-color: #f87171; }
+.toast.toast-info { border-left-color: #38bdf8; }
+
+.toast.is-hiding {
+    opacity: 0;
+    transform: translateX(30px);
+}
+
+@keyframes toastSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(16px) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
     }
 }

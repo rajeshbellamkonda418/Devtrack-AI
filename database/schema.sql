@@ -1,3 +1,5 @@
+-- Legacy MySQL source schema only. The application backend now uses MongoDB.
+-- See MONGODB_MIGRATION.md to migrate records from an existing MySQL database.
 CREATE DATABASE IF NOT EXISTS devtrack_ai;
 USE devtrack_ai;
 CREATE TABLE IF NOT EXISTS users (

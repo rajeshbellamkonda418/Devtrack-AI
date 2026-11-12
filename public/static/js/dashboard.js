@@ -46,11 +46,232 @@ if (!showDashboardSection(initialSection)) {
     showDashboardSection("overview");
 }
 
+function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, character => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+    })[character]);
+}
+
+function showToast(message, type = "info") {
+    const container = document.getElementById("toastContainer");
+    if (!container) return;
+    const toast = document.createElement("div");
+    toast.className = `toast toast-${type}`;
+    const icon = type === "success" ? "✓" : type === "error" ? "⚠" : "ℹ";
+    toast.innerHTML = `<span style="font-weight:700;">${icon}</span> <span>${escapeHtml(message)}</span>`;
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        toast.classList.add("is-hiding");
+        setTimeout(() => toast.remove(), 320);
+    }, 3500);
+}
+
+function animateCount(element, target, duration = 800) {
+    if (!element) return;
+    const start = parseInt(element.textContent, 10) || 0;
+    if (start === target) return;
+    if (!animationsEnabled()) {
+        element.textContent = target;
+        return;
+    }
+    const startTime = performance.now();
+
+    function update(time) {
+        const elapsed = time - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const easeOut = 1 - Math.pow(1 - progress, 3);
+        const current = Math.round(start + (target - start) * easeOut);
+        element.textContent = current;
+        if (progress < 1) {
+            requestAnimationFrame(update);
+        } else {
+            element.textContent = target;
+        }
+    }
+    requestAnimationFrame(update);
+}
+
 const applicationList = document.getElementById("applicationList");
 const statuses = ["Applied", "Interview", "Selected", "Rejected"];
 const skillsInput = document.getElementById("skills-input");
 const skillButtons = document.querySelectorAll("[data-skill]");
 let applications = [];
+let currentApplicationsView = localStorage.getItem("devtrack_apps_view") || "table";
+
+function setApplicationsView(mode) {
+    currentApplicationsView = mode;
+    localStorage.setItem("devtrack_apps_view", mode);
+    const tableBtn = document.getElementById("tableViewBtn");
+    const kanbanBtn = document.getElementById("kanbanViewBtn");
+    const tableEl = document.getElementById("applicationList");
+    const kanbanEl = document.getElementById("kanbanBoard");
+
+    if (tableBtn && kanbanBtn && tableEl && kanbanEl) {
+        if (mode === "kanban") {
+            tableBtn.classList.remove("is-active");
+            tableBtn.setAttribute("aria-pressed", "false");
+            kanbanBtn.classList.add("is-active");
+            kanbanBtn.setAttribute("aria-pressed", "true");
+            tableEl.style.display = "none";
+            kanbanEl.style.display = "grid";
+        } else {
+            kanbanBtn.classList.remove("is-active");
+            kanbanBtn.setAttribute("aria-pressed", "false");
+            tableBtn.classList.add("is-active");
+            tableBtn.setAttribute("aria-pressed", "true");
+            kanbanEl.style.display = "none";
+            tableEl.style.display = "block";
+        }
+    }
+}
+
+const tableViewBtn = document.getElementById("tableViewBtn");
+const kanbanViewBtn = document.getElementById("kanbanViewBtn");
+if (tableViewBtn) {
+    tableViewBtn.addEventListener("click", () => setApplicationsView("table"));
+}
+if (kanbanViewBtn) {
+    kanbanViewBtn.addEventListener("click", () => setApplicationsView("kanban"));
+}
+
+function renderKanbanBoard(filteredJobs) {
+    const kanban = document.getElementById("kanbanBoard");
+    if (!kanban) return;
+    kanban.replaceChildren();
+
+    const statusConfigs = [
+        { status: "Applied", label: "Applied", icon: "📝", dotClass: "dot-applied" },
+        { status: "Interview", label: "Interview", icon: "💬", dotClass: "dot-interview" },
+        { status: "Selected", label: "Selected", icon: "⭐", dotClass: "dot-selected" },
+        { status: "Rejected", label: "Rejected", icon: "✕", dotClass: "dot-rejected" },
+    ];
+
+    statusConfigs.forEach(cfg => {
+        const colJobs = filteredJobs.filter(job => job.status === cfg.status);
+        const col = document.createElement("div");
+        col.className = "kanban-col";
+
+        const header = document.createElement("div");
+        header.className = "kanban-col-header";
+        header.innerHTML = `
+            <div class="kanban-col-title">
+                <span class="status-dot-sm ${cfg.dotClass}"></span>
+                <span>${cfg.icon} ${cfg.label}</span>
+            </div>
+            <span class="kanban-count-pill">${colJobs.length}</span>
+        `;
+        col.appendChild(header);
+
+        const cardsContainer = document.createElement("div");
+        cardsContainer.className = "kanban-cards";
+
+        if (!colJobs.length) {
+            const empty = document.createElement("div");
+            empty.className = "kanban-empty";
+            empty.textContent = `No ${cfg.label.toLowerCase()} applications`;
+            cardsContainer.appendChild(empty);
+        } else {
+            colJobs.forEach(job => {
+                const card = document.createElement("div");
+                card.className = `kanban-card status-${job.status.toLowerCase()}`;
+
+                const top = document.createElement("div");
+                top.className = "kanban-card-top";
+                top.innerHTML = `
+                    <div>
+                        <div class="kanban-card-company">${escapeHtml(job.company)}</div>
+                        <div class="kanban-card-role">${escapeHtml(job.role)}</div>
+                    </div>
+                `;
+                card.appendChild(top);
+
+                if (job.skills) {
+                    const skillsWrap = document.createElement("div");
+                    skillsWrap.className = "kanban-card-skills";
+                    job.skills.split(/[, ]+/).filter(Boolean).slice(0, 4).forEach(skill => {
+                        const tag = document.createElement("span");
+                        tag.className = "kanban-skill-tag";
+                        tag.textContent = skill;
+                        skillsWrap.appendChild(tag);
+                    });
+                    card.appendChild(skillsWrap);
+                }
+
+                const footer = document.createElement("div");
+                footer.className = "kanban-card-footer";
+
+                const date = document.createElement("span");
+                date.className = "kanban-card-date";
+                date.textContent = (job.applied_date || "").slice(0, 10);
+
+                const actions = document.createElement("div");
+                actions.className = "kanban-card-actions";
+
+                const select = document.createElement("select");
+                select.className = "kanban-stage-select";
+                select.setAttribute("aria-label", "Change status");
+                statuses.forEach(s => {
+                    const opt = document.createElement("option");
+                    opt.value = s;
+                    opt.textContent = s;
+                    if (s === job.status) opt.selected = true;
+                    select.appendChild(opt);
+                });
+
+                select.addEventListener("change", async () => {
+                    const newStatus = select.value;
+                    try {
+                        const res = await fetch(`/api/jobs/${job.id}`, {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ status: newStatus })
+                        });
+                        if (!res.ok) throw new Error("Could not update status");
+                        showToast(`Application moved to ${newStatus}!`, "success");
+                        loadDashboard();
+                    } catch (err) {
+                        showToast(err.message, "error");
+                        loadDashboard();
+                    }
+                });
+
+                const delBtn = document.createElement("button");
+                delBtn.className = "kanban-delete-btn";
+                delBtn.type = "button";
+                delBtn.title = "Delete application";
+                delBtn.innerHTML = "🗑";
+                delBtn.addEventListener("click", async () => {
+                    if (!confirm(`Delete application for ${job.company} - ${job.role}?`)) return;
+                    try {
+                        const res = await fetch(`/api/jobs/${job.id}`, { method: "DELETE" });
+                        if (!res.ok) throw new Error("Could not delete");
+                        showToast("Application deleted", "info");
+                        loadDashboard();
+                    } catch (err) {
+                        showToast(err.message, "error");
+                    }
+                });
+
+                actions.append(select, delBtn);
+                footer.append(date, actions);
+                card.appendChild(footer);
+                cardsContainer.appendChild(card);
+            });
+        }
+
+        col.appendChild(cardsContainer);
+        kanban.appendChild(col);
+    });
+
+    if (window.gsap && animationsEnabled()) {
+        animateIn(kanban.querySelectorAll(".kanban-card"));
+    }
+}
 
 function syncSkillSuggestions() {
     const selected = new Set(
@@ -84,8 +305,10 @@ skillButtons.forEach(button => {
     });
 });
 
-skillsInput.addEventListener("input", syncSkillSuggestions);
-syncSkillSuggestions();
+if (skillsInput) {
+    skillsInput.addEventListener("input", syncSkillSuggestions);
+    syncSkillSuggestions();
+}
 
 function renderApplications() {
     const search = document.getElementById("application-search").value
@@ -98,6 +321,8 @@ function renderApplications() {
         return searchable.includes(search) && (!status || job.status === status);
     });
 
+    const kanbanEl = document.getElementById("kanbanBoard");
+
     if (!filteredJobs.length) {
         document.getElementById("filter-help").textContent = applications.length
             ? "No applications match. Try changing or clearing your filters."
@@ -105,6 +330,11 @@ function renderApplications() {
         applicationList.textContent = applications.length
             ? "No applications match these filters."
             : "No applications yet. Add one using the form above.";
+        if (kanbanEl) {
+            kanbanEl.innerHTML = `<div class="kanban-empty" style="grid-column: 1 / -1; padding: 40px;">${
+                applications.length ? "No applications match these filters." : "No applications yet. Add one using the form above."
+            }</div>`;
+        }
         return;
     }
 
@@ -146,6 +376,8 @@ function renderApplications() {
     });
 
     applicationList.replaceChildren(table);
+    renderKanbanBoard(filteredJobs);
+    setApplicationsView(currentApplicationsView);
     animateIn(table.querySelectorAll("tbody tr"));
 }
 
@@ -171,44 +403,69 @@ function renderStatusChart() {
     ]));
     const maxCount = Math.max(1, ...Object.values(counts));
     const chart = document.getElementById("statusChart");
-    chart.replaceChildren();
+    if (chart) {
+        chart.replaceChildren();
 
-    statuses.forEach(status => {
-        const row = document.createElement("div");
-        row.className = "status-chart-row";
-        const label = document.createElement("span");
-        label.className = "status-chart-label";
-        label.textContent = status;
-        const track = document.createElement("div");
-        track.className = "status-chart-track";
-        track.setAttribute("role", "img");
-        track.setAttribute("aria-label", `${counts[status]} ${status} applications`);
-        const bar = document.createElement("span");
-        bar.className = `status-chart-bar status-${status.toLowerCase()}`;
-        bar.style.width = `${(counts[status] / maxCount) * 100}%`;
-        bar.dataset.width = bar.style.width;
-        bar.style.width = "0";
-        track.appendChild(bar);
-        const count = document.createElement("span");
-        count.className = "status-chart-count";
-        count.textContent = counts[status];
-        row.append(label, track, count);
-        chart.appendChild(row);
-    });
+        statuses.forEach(status => {
+            const row = document.createElement("div");
+            row.className = "status-chart-row";
+            const label = document.createElement("span");
+            label.className = "status-chart-label";
+            label.textContent = status;
+            const track = document.createElement("div");
+            track.className = "status-chart-track";
+            track.setAttribute("role", "img");
+            track.setAttribute("aria-label", `${counts[status]} ${status} applications`);
+            const bar = document.createElement("span");
+            bar.className = `status-chart-bar status-${status.toLowerCase()}`;
+            bar.style.width = `${(counts[status] / maxCount) * 100}%`;
+            bar.dataset.width = bar.style.width;
+            bar.style.width = "0";
+            track.appendChild(bar);
+            const count = document.createElement("span");
+            count.className = "status-chart-count";
+            count.textContent = counts[status];
+            row.append(label, track, count);
+            chart.appendChild(row);
+        });
 
-    if (window.gsap && animationsEnabled()) {
-        window.gsap.to(chart.querySelectorAll(".status-chart-bar"), {
-            width: index => chart.querySelectorAll(".status-chart-bar")[index].dataset.width,
-            duration: 0.65,
-            delay: 0.1,
-            stagger: 0.08,
-            ease: "power2.out"
-        });
-    } else {
-        chart.querySelectorAll(".status-chart-bar").forEach(bar => {
-            bar.style.width = bar.dataset.width;
-        });
+        if (window.gsap && animationsEnabled()) {
+            window.gsap.to(chart.querySelectorAll(".status-chart-bar"), {
+                width: index => chart.querySelectorAll(".status-chart-bar")[index].dataset.width,
+                duration: 0.65,
+                delay: 0.1,
+                stagger: 0.08,
+                ease: "power2.out"
+            });
+        } else {
+            chart.querySelectorAll(".status-chart-bar").forEach(bar => {
+                bar.style.width = bar.dataset.width;
+            });
+        }
     }
+
+    const total = applications.length;
+    const interviewCount = counts["Interview"] || 0;
+    const selectedCount = counts["Selected"] || 0;
+    const appliedCount = counts["Applied"] || 0;
+
+    const interviewRate = total ? Math.round((interviewCount / total) * 100) : 0;
+    const offerRate = total ? Math.round((selectedCount / total) * 100) : 0;
+    const activeRate = total ? Math.round(((appliedCount + interviewCount) / total) * 100) : 0;
+
+    const elInterviewRate = document.getElementById("analyticsInterviewRate");
+    const elOfferRate = document.getElementById("analyticsOfferRate");
+    const elActiveRate = document.getElementById("analyticsActiveRate");
+    if (elInterviewRate) elInterviewRate.textContent = `${interviewRate}%`;
+    if (elOfferRate) elOfferRate.textContent = `${offerRate}%`;
+    if (elActiveRate) elActiveRate.textContent = `${activeRate}%`;
+
+    const elInterviewRing = document.getElementById("interviewRing");
+    const elOfferRing = document.getElementById("offerRing");
+    const elActiveRing = document.getElementById("activeRing");
+    if (elInterviewRing) elInterviewRing.setAttribute("stroke-dasharray", `${interviewRate}, 100`);
+    if (elOfferRing) elOfferRing.setAttribute("stroke-dasharray", `${offerRate}, 100`);
+    if (elActiveRing) elActiveRing.setAttribute("stroke-dasharray", `${activeRate}, 100`);
 }
 
 async function loadDashboard() {
@@ -221,21 +478,28 @@ async function loadDashboard() {
         }
 
         applications = jobs;
-        document.getElementById("totalApplications").textContent = jobs.length;
-        document.getElementById("totalCompanies").textContent =
-            new Set(jobs.map(job => job.company.toLowerCase())).size;
-        document.getElementById("interviewCount").textContent =
-            jobs.filter(job => job.status === "Interview").length;
-        document.getElementById("selectedCount").textContent =
-            jobs.filter(job => job.status === "Selected").length;
-        document.getElementById("exportCsv").disabled = jobs.length === 0;
+        const total = jobs.length;
+        const companies = new Set(jobs.map(job => job.company.toLowerCase())).size;
+        const interviews = jobs.filter(job => job.status === "Interview").length;
+        const selected = jobs.filter(job => job.status === "Selected").length;
+
+        animateCount(document.getElementById("totalApplications"), total);
+        animateCount(document.getElementById("totalCompanies"), companies);
+        animateCount(document.getElementById("interviewCount"), interviews);
+        animateCount(document.getElementById("selectedCount"), selected);
+
+        const exportBtn = document.getElementById("exportCsv");
+        if (exportBtn) exportBtn.disabled = jobs.length === 0;
+
         renderApplications();
         renderStatusChart();
         animateIn(document.querySelectorAll(".stats .card"));
         return true;
     } catch (error) {
-        applicationList.textContent = error.message;
-        applicationList.classList.add("error");
+        if (applicationList) {
+            applicationList.textContent = error.message;
+            applicationList.classList.add("error");
+        }
         return false;
     }
 }
@@ -281,6 +545,7 @@ document.getElementById("quick-add-form")
                 throw new Error("Application was added, but the dashboard could not refresh.");
             }
             message.textContent = "Application added.";
+            showToast("Application added to tracker!", "success");
             showDashboardSection("applications");
             document.getElementById("applications").scrollIntoView({
                 behavior: animationsEnabled() ? "smooth" : "auto",
@@ -483,10 +748,22 @@ if (dropZone && resumeFileInput) {
 
 function handleFileSelected(file) {
     if (!file) return;
+    const isResumeFile = /\.(pdf|docx|txt)$/i.test(file.name || "");
+    if (!isResumeFile) {
+        if (resumeFileInput) resumeFileInput.value = "";
+        if (selectedFileInfo) selectedFileInfo.style.display = "none";
+        if (dropZoneContent) dropZoneContent.style.display = "block";
+        resumeMessage.textContent = "Only PDF, DOCX, and TXT resume files are supported.";
+        resumeMessage.classList.add("error");
+        return;
+    }
     if (dropZoneContent) dropZoneContent.style.display = "none";
     if (selectedFileInfo) {
         selectedFileInfo.style.display = "flex";
         selectedFileName.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+    }
+    if (resumeMessage) {
+        resumeMessage.classList.remove("error");
     }
 }
 
@@ -511,13 +788,15 @@ if (resumeForm) {
     resumeForm.addEventListener("submit", async event => {
         event.preventDefault();
         const role = getSelectedRole();
-        if (!role) {
-            resumeMessage.textContent = "Please select or type a target role.";
+        if (targetRoleSelect && targetRoleSelect.value === "custom" && !role) {
+            resumeMessage.textContent = "Please enter your custom target role or select automatic matching.";
             resumeMessage.classList.add("error");
             return;
         }
 
-        resumeMessage.textContent = "Analyzing resume with AI...";
+        resumeMessage.textContent = role
+            ? "Analyzing resume for the selected role..."
+            : "Analyzing resume and matching roles from its skills...";
         resumeMessage.classList.remove("error");
         analyzeResumeBtn.disabled = true;
         analyzeResumeBtn.textContent = "Analyzing...";
@@ -528,8 +807,12 @@ if (resumeForm) {
                 if (!resumeFileInput.files.length) {
                     throw new Error("Please select a resume file (.pdf, .docx, .txt).");
                 }
+                const selectedFile = resumeFileInput.files[0];
+                if (!/\.(pdf|docx|txt)$/i.test(selectedFile.name || "")) {
+                    throw new Error("Only PDF, DOCX, and TXT resume files are valid for analysis.");
+                }
                 const formData = new FormData();
-                formData.append("resume", resumeFileInput.files[0]);
+                formData.append("resume", selectedFile);
                 formData.append("role", role);
 
                 response = await fetch("/api/analyze-resume", {
@@ -590,6 +873,19 @@ function renderResumeAnalysis(data) {
     const extraPills = data.extra_skills.length
         ? data.extra_skills.map(s => `<span class="skill-tag tag-extra">${escapeHtml(s)}</span>`).join("")
         : '<span class="skill-help">No additional secondary skills found</span>';
+
+    const recommendedRolesHtml = (data.recommended_roles || []).length
+        ? (data.recommended_roles || []).map(role => `
+            <div class="resume-role-option">
+                <button type="button" class="resume-role-chip" data-role-name="${escapeHtml(role.title)}">
+                    <span>${escapeHtml(role.title)}</span>
+                    <strong>${role.match}%</strong>
+                </button>
+                <small>Matched skills: ${(role.matched_skills || []).map(escapeHtml).join(", ")}</small>
+            </div>
+        `).join("")
+        : '<span class="skill-help">No strong role matches found yet.</span>';
+    const topRecommendedRole = (data.recommended_roles || [])[0];
 
     const metaItems = [
         `<span class="meta-pill">📝 ${data.word_count} Words</span>`,
@@ -671,6 +967,18 @@ function renderResumeAnalysis(data) {
             <div class="skills-pill-box">${extraPills}</div>
         </div>
 
+        <div class="skills-col" style="background:#111827; border:1px solid #334155; border-radius:10px; padding:18px;">
+            <h4 style="color:#4ade80; font-size:14px; margin-bottom:10px;">AI Job Roles Matching This Resume</h4>
+            <p>Ranked from the skills detected in your resume. Select a role to load live openings.</p>
+            <div class="skills-pill-box resume-role-box">${recommendedRolesHtml}</div>
+            <div class="resume-jobs-panel">
+                <h4 id="resumeJobsHeading">Live openings for your best-matched role</h4>
+                <div id="resumeRecommendedJobs" class="resume-recommended-jobs" aria-live="polite">
+                    <p class="muted-note">Loading jobs matching your resume...</p>
+                </div>
+            </div>
+        </div>
+
         <div class="ats-tips-container">
             <h4>🎯 ATS Optimization & Actionable Feedback</h4>
             <div class="tips-list">${tipsHtml}</div>
@@ -696,6 +1004,12 @@ function renderResumeAnalysis(data) {
 
     resumeResults.style.display = "flex";
     resumeResults.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if (topRecommendedRole) {
+        loadResumeRecommendedJobs(topRecommendedRole.title);
+    } else {
+        document.getElementById("resumeRecommendedJobs").textContent =
+            "No matching roles were found from the skills in this resume.";
+    }
 
     const searchFromAnalysisBtn = document.getElementById("searchFromAnalysisBtn");
     if (searchFromAnalysisBtn) {
@@ -710,6 +1024,13 @@ function renderResumeAnalysis(data) {
             }
         });
     }
+
+    document.querySelectorAll(".resume-role-chip").forEach(button => {
+        button.addEventListener("click", () => {
+            const roleName = button.dataset.roleName;
+            if (roleName) loadResumeRecommendedJobs(roleName);
+        });
+    });
 
     const atsVersionPanel = document.getElementById("atsVersionPanel");
     const atsVersionText = document.getElementById("atsVersionText");
@@ -742,6 +1063,66 @@ function renderResumeAnalysis(data) {
 
     if (window.gsap && animationsEnabled()) {
         animateIn(resumeResults.querySelectorAll(".skills-col, .ats-tips-container, .score-circle"));
+    }
+}
+
+let resumeJobsRequestId = 0;
+
+async function loadResumeRecommendedJobs(role) {
+    const jobsContainer = document.getElementById("resumeRecommendedJobs");
+    const heading = document.getElementById("resumeJobsHeading");
+    if (!jobsContainer || !role) return;
+
+    const requestId = ++resumeJobsRequestId;
+    if (heading) heading.textContent = `Live openings for ${role}`;
+    jobsContainer.textContent = "Searching live jobs...";
+
+    try {
+        const params = new URLSearchParams({
+            role,
+            location: "Remote",
+            platform: "all",
+            employment_type: "all"
+        });
+        const response = await fetch(`/api/search-jobs?${params}`);
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || "Could not load matching jobs.");
+        }
+        if (requestId !== resumeJobsRequestId) return;
+
+        const jobs = Array.isArray(data.jobs) ? data.jobs.slice(0, 5) : [];
+        if (!jobs.length) {
+            jobsContainer.textContent = `No live postings found for ${role} right now. Try another suggested role or use the job-board links in Job Search.`;
+            return;
+        }
+
+        const cards = jobs.map(job => {
+            const card = document.createElement("article");
+            card.className = "resume-job-card";
+
+            const title = document.createElement("strong");
+            title.textContent = job.title || "Untitled role";
+            const details = document.createElement("p");
+            details.textContent = [job.company, job.location, job.platform]
+                .filter(Boolean)
+                .join(" · ");
+            card.append(title, details);
+
+            if (isHttpUrl(job.url)) {
+                const link = document.createElement("a");
+                link.href = job.url;
+                link.target = "_blank";
+                link.rel = "noopener noreferrer";
+                link.textContent = "View opening";
+                card.appendChild(link);
+            }
+            return card;
+        });
+        jobsContainer.replaceChildren(...cards);
+    } catch (error) {
+        if (requestId !== resumeJobsRequestId) return;
+        jobsContainer.textContent = error.message || "Could not load matching jobs.";
     }
 }
 
@@ -890,9 +1271,11 @@ function updateSalarySnapshot() {
     salaryRangeBar.style.width = `${Math.min(100, ((maximum - minimum) / 5000000) * 100)}%`;
 }
 
-jobSearchRole.addEventListener("input", updateSalarySnapshot);
-salaryExperience.addEventListener("change", updateSalarySnapshot);
-updateSalarySnapshot();
+if (jobSearchRole && salaryExperience) {
+    jobSearchRole.addEventListener("input", updateSalarySnapshot);
+    salaryExperience.addEventListener("change", updateSalarySnapshot);
+    updateSalarySnapshot();
+}
 
 if (jobSearchForm) {
     jobSearchForm.addEventListener("submit", event => {
@@ -913,6 +1296,20 @@ async function executeJobSearch(
     employmentType = "all"
 ) {
     if (!jobSearchResults) return;
+
+    const cleanedRole = (role || "").trim();
+    if (!cleanedRole) {
+        const message = document.createElement("p");
+        message.className = "muted-note";
+        message.textContent = "Enter a role to search live job openings.";
+        jobSearchResults.replaceChildren(message);
+        if (platformLinksBar && platformLinksList) {
+            platformLinksList.replaceChildren();
+            platformLinksBar.style.display = "none";
+        }
+        return;
+    }
+
     jobSearchResults.innerHTML = '<p class="muted-note">Searching live jobs across platforms...</p>';
     if (jobSearchBtn) {
         jobSearchBtn.disabled = true;
@@ -921,7 +1318,7 @@ async function executeJobSearch(
 
     try {
         const queryParams = new URLSearchParams({
-            role,
+            role: cleanedRole,
             location,
             platform,
             employment_type: employmentType
@@ -948,25 +1345,35 @@ async function executeJobSearch(
 }
 
 function renderJobSearchResults(data) {
-    if (platformLinksBar && platformLinksList && data.platform_links) {
-        const links = data.platform_links.filter(platform => isHttpUrl(platform.url)).map(platform => {
-            const link = document.createElement("a");
-            link.className = "platform-chip";
-            link.href = platform.url;
-            link.target = "_blank";
-            link.rel = "noopener noreferrer";
-            link.textContent = `${platform.name} ↗`;
-            return link;
-        });
-        platformLinksList.replaceChildren(...links);
-        platformLinksBar.style.display = "flex";
+    if (platformLinksBar && platformLinksList) {
+        const links = Array.isArray(data.platform_links)
+            ? data.platform_links.filter(platform => isHttpUrl(platform.url))
+            : [];
+
+        if (!links.length) {
+            platformLinksList.replaceChildren();
+            platformLinksBar.style.display = "none";
+        } else {
+            const chips = links.map(platform => {
+                const link = document.createElement("a");
+                link.className = "platform-chip";
+                link.href = platform.url;
+                link.target = "_blank";
+                link.rel = "noopener noreferrer";
+                link.textContent = `${platform.name} ↗`;
+                return link;
+            });
+            platformLinksList.replaceChildren(...chips);
+            platformLinksBar.style.display = "flex";
+        }
     }
 
     if (!data.jobs || !data.jobs.length) {
         const message = document.createElement("p");
         message.className = "muted-note";
-        message.textContent =
-            `No live postings found matching "${data.query}". Use the direct platform links above to search on LinkedIn, Indeed, and Glassdoor!`;
+        message.textContent = data.query
+            ? `No live postings found matching "${data.query}". Use the direct platform links above to search on LinkedIn, Indeed, and Glassdoor!`
+            : "Enter a role to search live job openings.";
         jobSearchResults.replaceChildren(message);
         return;
     }
@@ -1068,9 +1475,9 @@ async function handleTrackJob(btn, company, role, skills) {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                company: company,
-                role: role,
-                skills: skills,
+                company: (company || "").slice(0, 120),
+                role: (role || "").slice(0, 120),
+                skills: skills || "",
                 status: "Applied"
             })
         });
@@ -1097,8 +1504,247 @@ const interviewQuestionList = document.getElementById("interview-question-list")
 const interviewQuestionCount = document.getElementById("interview-question-count");
 let interviewQuestionRequest = 0;
 
+let currentInterviewQuestions = [];
+let quizIndex = 0;
+let quizTimerSec = 60;
+let quizTimerId = null;
+let quizTimerRunning = false;
+let currentInterviewMode = "browse";
+let quizUserRatings = {};
+
+function formatTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+function stopQuizTimer() {
+    if (quizTimerId) {
+        clearInterval(quizTimerId);
+        quizTimerId = null;
+    }
+    quizTimerRunning = false;
+}
+
+function startQuizTimer(resetSeconds = 60) {
+    stopQuizTimer();
+    quizTimerSec = resetSeconds;
+    quizTimerRunning = true;
+    updateQuizTimerDisplay();
+
+    quizTimerId = setInterval(() => {
+        if (quizTimerSec > 0) {
+            quizTimerSec -= 1;
+            updateQuizTimerDisplay();
+            if (quizTimerSec === 0) {
+                stopQuizTimer();
+                showToast("Time's up! Review the sample answer.", "info");
+            }
+        } else {
+            stopQuizTimer();
+        }
+    }, 1000);
+}
+
+function updateQuizTimerDisplay() {
+    const display = document.getElementById("quizTimerDisplay");
+    if (!display) return;
+    display.textContent = formatTime(quizTimerSec);
+    display.classList.toggle("is-warning", quizTimerSec <= 10 && quizTimerSec > 0);
+}
+
+function renderQuizCard() {
+    const panel = document.getElementById("interview-quiz-panel");
+    if (!panel) return;
+
+    if (!currentInterviewQuestions.length) {
+        panel.innerHTML = `<p class="muted-note">No questions loaded. Please select a domain and difficulty above.</p>`;
+        return;
+    }
+
+    if (quizIndex >= currentInterviewQuestions.length) {
+        const masteredCount = Object.values(quizUserRatings).filter(r => r === "mastered").length;
+        const total = currentInterviewQuestions.length;
+        const scorePercent = Math.round((masteredCount / total) * 100);
+
+        panel.innerHTML = `
+            <div style="text-align: center; padding: 20px 0;">
+                <div style="font-size: 3rem; margin-bottom: 12px;">🎉</div>
+                <h3 style="font-size: 1.5rem; color: #f8fafc; margin-bottom: 8px;">Practice Session Complete!</h3>
+                <p style="color: #94a3b8; max-width: 440px; margin: 0 auto 20px;">
+                    You mastered <strong>${masteredCount}</strong> of <strong>${total}</strong> questions (${scorePercent}% confidence).
+                </p>
+                <div style="display: flex; justify-content: center; gap: 12px;">
+                    <button type="button" id="quizRestartBtn" class="primary-button">Practice Again ↺</button>
+                    <button type="button" id="quizReviewListBtn" class="secondary-button">Browse All List</button>
+                </div>
+            </div>
+        `;
+        document.getElementById("quizRestartBtn")?.addEventListener("click", () => {
+            quizIndex = 0;
+            quizUserRatings = {};
+            renderQuizCard();
+        });
+        document.getElementById("quizReviewListBtn")?.addEventListener("click", () => {
+            setInterviewMode("browse");
+        });
+        return;
+    }
+
+    const item = currentInterviewQuestions[quizIndex];
+    const itemRating = quizUserRatings[quizIndex] || "";
+
+    panel.innerHTML = `
+        <div class="quiz-header">
+            <div class="quiz-meta">
+                <span class="quiz-progress-text">Question ${quizIndex + 1} of ${currentInterviewQuestions.length}</span>
+                <span class="quiz-badge">${escapeHtml(item.topic_name)}</span>
+                <span class="question-level level-${item.level}">${item.level}</span>
+            </div>
+            <div class="quiz-timer-container">
+                <div id="quizTimerDisplay" class="quiz-timer-display">${formatTime(quizTimerSec)}</div>
+                <button type="button" id="quizTimerToggleBtn" class="quiz-timer-btn">${quizTimerRunning ? "Pause" : "Start"}</button>
+                <button type="button" id="quizTimerResetBtn" class="quiz-timer-btn" title="Reset to 60s">↺ 60s</button>
+            </div>
+        </div>
+
+        <div class="quiz-question-box">
+            <h3 class="quiz-question-title">${escapeHtml(item.question)}</h3>
+        </div>
+
+        <div>
+            <button type="button" id="quizToggleAnswerBtn" class="quiz-answer-toggle-btn">Reveal Sample Answer ↘</button>
+            <div id="quizAnswerBox" class="quiz-answer-box" style="display: none;">
+                <strong>Sample Answer Key</strong>
+                <div id="quizAnswerContent"></div>
+            </div>
+        </div>
+
+        <div class="quiz-footer">
+            <div class="quiz-rating-group">
+                <span style="font-size:0.85rem; color:#94a3b8; margin-right:4px;">Self-rating:</span>
+                <button type="button" id="quizRateMastered" class="quiz-rating-btn mastered ${itemRating === 'mastered' ? 'is-active' : ''}">Mastered ✓</button>
+                <button type="button" id="quizRateReview" class="quiz-rating-btn review ${itemRating === 'review' ? 'is-active' : ''}">Needs Review 🔄</button>
+            </div>
+            <div class="quiz-nav-group">
+                <button type="button" id="quizPrevBtn" class="quiz-nav-btn" ${quizIndex === 0 ? "disabled" : ""}>← Previous</button>
+                <button type="button" id="quizNextBtn" class="quiz-nav-btn">${quizIndex === currentInterviewQuestions.length - 1 ? "Finish Session 🎉" : "Next Question →"}</button>
+            </div>
+        </div>
+    `;
+
+    const answerContent = document.getElementById("quizAnswerContent");
+    if (answerContent) {
+        answerContent.textContent = item.answer;
+    }
+
+    document.getElementById("quizTimerToggleBtn")?.addEventListener("click", () => {
+        if (quizTimerRunning) {
+            stopQuizTimer();
+            const btn = document.getElementById("quizTimerToggleBtn");
+            if (btn) btn.textContent = "Resume";
+        } else {
+            startQuizTimer(quizTimerSec || 60);
+            const btn = document.getElementById("quizTimerToggleBtn");
+            if (btn) btn.textContent = "Pause";
+        }
+    });
+
+    document.getElementById("quizTimerResetBtn")?.addEventListener("click", () => {
+        startQuizTimer(60);
+        const toggleBtn = document.getElementById("quizTimerToggleBtn");
+        if (toggleBtn) toggleBtn.textContent = "Pause";
+    });
+
+    const toggleAnswerBtn = document.getElementById("quizToggleAnswerBtn");
+    const answerBox = document.getElementById("quizAnswerBox");
+    if (toggleAnswerBtn && answerBox) {
+        toggleAnswerBtn.addEventListener("click", () => {
+            const isHidden = answerBox.style.display === "none";
+            answerBox.style.display = isHidden ? "block" : "none";
+            toggleAnswerBtn.textContent = isHidden ? "Hide Answer ↗" : "Reveal Sample Answer ↘";
+        });
+    }
+
+    document.getElementById("quizRateMastered")?.addEventListener("click", () => {
+        quizUserRatings[quizIndex] = "mastered";
+        renderQuizCard();
+    });
+
+    document.getElementById("quizRateReview")?.addEventListener("click", () => {
+        quizUserRatings[quizIndex] = "review";
+        renderQuizCard();
+    });
+
+    document.getElementById("quizPrevBtn")?.addEventListener("click", () => {
+        if (quizIndex > 0) {
+            quizIndex -= 1;
+            startQuizTimer(60);
+            renderQuizCard();
+        }
+    });
+
+    document.getElementById("quizNextBtn")?.addEventListener("click", () => {
+        quizIndex += 1;
+        startQuizTimer(60);
+        renderQuizCard();
+    });
+
+    if (window.gsap && animationsEnabled()) {
+        window.gsap.from(".quiz-question-box", {
+            y: 8,
+            opacity: 0,
+            duration: 0.25,
+            ease: "power2.out"
+        });
+    }
+}
+
+function setInterviewMode(mode) {
+    currentInterviewMode = mode;
+    const browseBtn = document.getElementById("browseModeBtn");
+    const quizBtn = document.getElementById("quizModeBtn");
+    const listEl = document.getElementById("interview-question-list");
+    const quizEl = document.getElementById("interview-quiz-panel");
+
+    if (browseBtn && quizBtn && listEl && quizEl) {
+        if (mode === "quiz") {
+            browseBtn.classList.remove("is-active");
+            browseBtn.setAttribute("aria-pressed", "false");
+            quizBtn.classList.add("is-active");
+            quizBtn.setAttribute("aria-pressed", "true");
+            listEl.style.display = "none";
+            quizEl.style.display = "block";
+            renderQuizCard();
+        } else {
+            quizBtn.classList.remove("is-active");
+            quizBtn.setAttribute("aria-pressed", "false");
+            browseBtn.classList.add("is-active");
+            browseBtn.setAttribute("aria-pressed", "true");
+            quizEl.style.display = "none";
+            listEl.style.display = "block";
+            stopQuizTimer();
+        }
+    }
+}
+
+const browseModeBtn = document.getElementById("browseModeBtn");
+const quizModeBtn = document.getElementById("quizModeBtn");
+if (browseModeBtn) {
+    browseModeBtn.addEventListener("click", () => setInterviewMode("browse"));
+}
+if (quizModeBtn) {
+    quizModeBtn.addEventListener("click", () => setInterviewMode("quiz"));
+}
+
 function renderInterviewQuestions(questions) {
+    currentInterviewQuestions = questions;
     interviewQuestionList.replaceChildren();
+
+    const modeToggle = document.getElementById("interviewModeToggle");
+    if (modeToggle) {
+        modeToggle.style.display = questions.length ? "inline-flex" : "none";
+    }
 
     if (!questions.length) {
         interviewQuestionCount.textContent = "No questions found for this selection.";
@@ -1165,6 +1811,9 @@ function renderInterviewQuestions(questions) {
     });
 
     interviewQuestionList.replaceChildren(cards);
+    if (currentInterviewMode === "quiz") {
+        renderQuizCard();
+    }
 }
 
 async function loadInterviewQuestions() {

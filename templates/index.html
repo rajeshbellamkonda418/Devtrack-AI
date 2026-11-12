@@ -8,7 +8,6 @@
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-    <script defer src="{{ url_for('static', filename='js/auth.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/script.js') }}"></script>
 </head>
 
@@ -21,13 +20,6 @@
             <a href="/dashboard#job-search">Job Search</a>
             <a href="/dashboard#interview-prep">Interview Prep</a>
             <a href="/dashboard#dsa-practice">DSA Practice</a>
-            {% if session.get("user_id") %}
-                <form class="nav-logout" action="/logout" method="post">
-                    <button type="submit">Sign out</button>
-                </form>
-            {% else %}
-                <a href="#account-access">Sign in</a>
-            {% endif %}
             <span class="status-dot"></span>
             Career Workspace
         </div>
@@ -50,7 +42,7 @@
                     <a class="primary-link search-link" href="/dashboard#job-search">Search Jobs 🌐</a>
                     <a class="primary-link" href="/dashboard#interview-prep">Practice Interviews ✨</a>
                     <a class="primary-link" href="/dashboard#dsa-practice">Practice DSA 🧩</a>
-                    <a class="primary-link dashboard-link" href="/dashboard">Dashboard ↘</a>
+                    <a class="primary-link dashboard-link" href="/dashboard">Open Dashboard ↘</a>
                 </div>
                 <p class="hero-note">A clear next step for every stage of your job search.</p>
             </div>
@@ -197,79 +189,57 @@
                 <p class="muted">Manage your job applications in one place.</p>
             </div>
 
-            {% if session.get("user_id") %}
-                <form id="job-form" class="job-form">
-                    <input name="company" placeholder="Company name" required>
-                    <input name="role" placeholder="Job role" required>
-                    <input name="skills" placeholder="Skills (optional)">
-                    <select name="status">
-                        <option>Applied</option>
-                        <option>Interview</option>
-                        <option>Selected</option>
-                        <option>Rejected</option>
-                    </select>
-                    <button class="button" type="submit">Add Application +</button>
-                </form>
+            <form id="job-form" class="job-form">
+                <input name="company" placeholder="Company name" maxlength="120" required>
+                <input name="role" placeholder="Job role" maxlength="120" required>
+                <input name="skills" placeholder="Skills (optional)">
+                <select name="status">
+                    <option>Applied</option>
+                    <option>Interview</option>
+                    <option>Selected</option>
+                    <option>Rejected</option>
+                </select>
+                <button class="button" type="submit">Add Application +</button>
+            </form>
 
-                <div class="table-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Company</th>
-                                <th>Role</th>
-                                <th>Skills</th>
-                                <th>Status</th>
-                                <th>Date</th>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody id="jobs-list">
-                            <tr>
-                                <td colspan="6" class="empty">Loading applications...</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-                <p id="message" class="message"></p>
-            {% else %}
-                <p class="account-prompt">Sign in to add and manage your applications.</p>
-                <a class="primary-link" href="#account-access">Sign in to your account</a>
-            {% endif %}
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Company</th>
+                            <th>Role</th>
+                            <th>Skills</th>
+                            <th>Status</th>
+                            <th>Date</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="jobs-list">
+                        <tr>
+                            <td colspan="6" class="empty">Loading applications...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p id="message" class="message"></p>
         </section>
 
         <section class="section" id="account-access" data-reveal>
             <div class="section-heading">
                 <div>
                     <p class="eyebrow">YOUR WORKSPACE</p>
-                    <h2>{% if session.get("user_id") %}Account{% else %}Sign in or create an account{% endif %}</h2>
+                    <h2>Start with your dashboard</h2>
                 </div>
-                <p class="muted">Your application data stays private to your account.</p>
+                <p class="muted">No sign-in required. Your workspace is ready to use immediately.</p>
             </div>
-            {% if session.get("user_id") %}
-                <p>Signed in as <strong>{{ session.get("user_name") }}</strong>.</p>
-                <a class="primary-link" href="/dashboard">Open your dashboard</a>
-            {% else %}
-                <form id="auth-form" class="auth-form">
-                    <label for="auth-name">Name</label>
-                    <input id="auth-name" name="name" type="text" autocomplete="username"
-                        minlength="2" maxlength="80" required>
-                    <label for="auth-password">Password</label>
-                    <input id="auth-password" name="password" type="password"
-                        autocomplete="current-password" minlength="8" maxlength="128" required>
-                    <button id="auth-submit" class="button" type="submit">Sign in</button>
-                    <p id="auth-message" class="message" role="status" aria-live="polite"></p>
-                </form>
-                <p class="auth-switch">
-                    <span id="auth-switch-prompt">New here?</span>
-                    <button id="auth-switch" class="auth-switch-button" type="button">Create an account</button>
-                </p>
-            {% endif %}
+            <a class="primary-link" href="/dashboard">Open Dashboard</a>
         </section>
 
         <footer>
             <span class="brand">DevTrack<span>AI</span></span>
             <span class="creator-credit">Developed by <span class="creator-name">Rajesh</span></span>
         </footer>
+        <div id="toastContainer" class="toast-container" aria-live="polite"></div>
     </main>
 </body>
 </html>
